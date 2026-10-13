@@ -1,0 +1,57 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isTeacher() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'teacher';
+    }
+
+    match /users/{userId} {
+      allow read: if signedIn() && request.auth.uid == userId;
+      allow create: if signedIn()
+        && request.auth.uid == userId
+        && request.resource.data.role == 'student';
+      allow update, delete: if false;
+    }
+
+    match /subjects/{subjectId} {
+      allow read: if signedIn();
+      allow write: if false;
+    }
+
+    match /material/{materialId} {
+      allow read: if signedIn();
+      allow create: if isTeacher()
+        && request.resource.data.teacherId == request.auth.uid
+        && request.resource.data.keys().hasAll([
+          'title', 'subjectName', 'description', 'fileUrl', 'cloudinaryPublicId',
+          'cloudinaryFolder', 'resourceType', 'fileName', 'contentType', 'teacherId', 'teacherName', 'uploadedAt'
+        ])
+        && request.resource.data.keys().hasOnly([
+          'title', 'subjectName', 'description', 'fileUrl', 'cloudinaryPublicId',
+          'cloudinaryFolder', 'resourceType', 'fileName', 'contentType', 'teacherId', 'teacherName', 'uploadedAt'
+        ])
+        && request.resource.data.title is string
+        && request.resource.data.subjectName is string
+        && request.resource.data.fileUrl is string
+        && request.resource.data.cloudinaryPublicId is string
+        && request.resource.data.cloudinaryFolder is string
+        && request.resource.data.resourceType is string
+        && request.resource.data.uploadedAt == request.time;
+      allow update: if isTeacher()
+        && resource.data.teacherId == request.auth.uid
+        && request.resource.data.teacherId == request.auth.uid;
+      allow delete: if isTeacher() && resource.data.teacherId == request.auth.uid;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
